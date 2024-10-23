@@ -1,34 +1,23 @@
 import math
+import warnings
+
 import numpy as np
 import patsy
 
-from sklearn.preprocessing import MinMaxScaler
-
-from ..space import normalize_dimensions
-
-
-from sklearn.preprocessing import MinMaxScaler
-
-from ProcessOptimizer.space import normalize_dimensions
-
-from sklearn.preprocessing import MinMaxScaler
-# import warnings
-
-
-#from .model_system import ModelSystem
-#from ..space import Real
-
+from .doe_transform import doe_to_real_space
 
 # Defining a number of helper functions for the optimal design of experiments
 
-def hit_and_run(x0, constraint_matrix, bounds, n_samples, thin = 1):
+
+def hit_and_run(x0, constraint_matrix, bounds, n_samples, thin=1):
     """A basic implementation of the hit and run sampler
 
     :param x0: The starting value of sampler.
     :param constraint_matrix: A matrix of constraints in the form Ax <= b.
     :param bounds: A vector of bounds in the form Ax <= b.
     :param n_samples: The numbers of samples to return.
-    :param thin: The thinning factor. Retain every 'thin' sample (e.g. if thin = 2, retain every 2nd sample)
+    :param thin: The thinning factor. Retain every 'thin' sample
+        (e.g. if thin=2, retain every 2nd sample)
 
     This function is from https://github.com/statease/dexpy
     Copyright 2016 Stat-Ease, Inc.
@@ -51,8 +40,8 @@ def hit_and_run(x0, constraint_matrix, bounds, n_samples, thin = 1):
 
             denom = constraint_matrix.dot(random_dir)
             intersections = (bounds - constraint_matrix.dot(x)) / denom
-            t_low  = np.max(intersections[denom < 0])
-            t_high  = np.min(intersections[denom > 0])
+            t_low = np.max(intersections[denom < 0])
+            t_high = np.min(intersections[denom > 0])
 
             u = np.random.uniform(0, 1)
             random_distance = t_low + u * (t_high - t_low)
@@ -101,7 +90,7 @@ def bootstrap(factor_names, model, run_count):
 
     d_dict = {}
     for i in range(0, factor_count):
-        d_dict[factor_names[i]] = start_points[:,i]
+        d_dict[factor_names[i]] = start_points[:, i]
 
     X = patsy.dmatrix(model, d_dict, return_type='matrix')
 
@@ -177,7 +166,7 @@ def make_model(factor_names, model_order, include_powers=True):
         if not include_powers:
             return interaction_model
         squared_terms = "pow({}, 2)".format(",2)+pow(".join(factor_names))
-        return "{}+{}".format(interaction_model, squared_terms)
+        return f"{interaction_model}+{squared_terms}"
 
     elif model_order == 3:
         interaction_model = "({})**3".format("+".join(factor_names))
@@ -194,7 +183,7 @@ def make_model(factor_names, model_order, include_powers=True):
 # Main function for optimal design of experiments
 
 def build_optimal_design(factor_names, **kwargs):
-    r"""Builds an optimal design.
+    """Builds an optimal design.
 
     This uses the Coordinate-Exchange algorithm from Meyer and Nachtsheim 1995
     :cite:`MeyerNachtsheim1995`.
@@ -280,7 +269,7 @@ def build_optimal_design(factor_names, **kwargs):
 
                     design_point[f] = low + ((high - low) / (steps - 1)) * s
                     new_point = expand_point(design_point, code)
- 
+
                     change_in_d = delta(X, XtXi, i, new_point)
                     evals += 1
 
@@ -309,35 +298,6 @@ def build_optimal_design(factor_names, **kwargs):
 
 
 # Integration with ProcessOptimizer
-
-
-def doe_to_real_space(design, factor_space):
-    """
-    Transform the design into real space
-
-    Parameters:
-    -----------
-    design: np.array
-        The design to transform.
-    space: Space object from ProcessOptimizer
-        The space object used to transform the design.
-
-    Returns:
-    --------
-    design_points_real_space: np.array
-        The design points in real space.
-    """
-
-    # This ensure that the transformation works no matter how the design is expressed
-    # E.g., with values from 0 to 1 or from -1 to 1. 
-    # This also means that you cannot effectively make a circumscribed central composite design
-    # It will be transformed into an inscribed central composite design
-    scaler = MinMaxScaler(feature_range=(0, 1))
-    transformed_design = scaler.fit_transform(design)
-
-    space_transform = normalize_dimensions(factor_space)
-    design_points_real_space = space_transform.inverse_transform(np.asarray(transformed_design))
-    return design_points_real_space
 
 
 def get_optimal_DOE(factor_space, budget, design_type=None, model=None):
@@ -374,15 +334,14 @@ def get_optimal_DOE(factor_space, budget, design_type=None, model=None):
     Example:
 
     from ProcessOptimizer.space import Integer, Real, Space
+    from ProcessOptimizer.doe import get_optimal_DOE
     factor_space = Space(dimensions=[Real(10, 40, name='ul_indicator'),
                                      Integer(20, 100, name='ul_base'),
                                      Integer(20, 100, name='ul_acid'),
                                      ])
 
-    get_DOE(factor_space, 10, design_type='response')
+    get_optimal_DOE(factor_space, 10, design_type='response')
     """
-
-    import warnings
 
     # Checking inputs - making sure that factor names are valid for use it patsy
     factor_names = factor_space.names
@@ -416,6 +375,8 @@ def get_optimal_DOE(factor_space, budget, design_type=None, model=None):
     if design_type is not None:
         design_model_orders = dict(zip(supported_design_types, model_orders))
         order = design_model_orders[design_type]
+    else:
+        order = None
 
     # Build the optimal design
     design = build_optimal_design(
