@@ -47,10 +47,10 @@ def hit_and_run(x0, constraint_matrix, bounds, n_samples, thin=1):
             random_distance = t_low + u * (t_high - t_low)
             x_new = x + random_distance * random_dir
 
-        out_samples[i, ] = x_new
+        out_samples[i,] = x_new
         x = x_new
 
-    return (out_samples)
+    return out_samples
 
 
 def bootstrap(factor_names, model, run_count):
@@ -66,9 +66,11 @@ def bootstrap(factor_names, model, run_count):
     if run_count == 0:
         run_count = model_size
     if model_size > run_count:
-        raise ValueError("Can't build a design of size {} "
-                         "for a model of rank {}. "
-                         "Model: '{}'".format(run_count, model_size, model))
+        raise ValueError(
+            "Can't build a design of size {} "
+            "for a model of rank {}. "
+            "Model: '{}'".format(run_count, model_size, model)
+        )
 
     factor_count = len(factor_names)
     x0 = np.zeros(factor_count)
@@ -92,7 +94,7 @@ def bootstrap(factor_names, model, run_count):
     for i in range(0, factor_count):
         d_dict[factor_names[i]] = start_points[:, i]
 
-    X = patsy.dmatrix(model, d_dict, return_type='matrix')
+    X = patsy.dmatrix(model, d_dict, return_type="matrix")
 
     return (d, X)
 
@@ -144,8 +146,9 @@ def delta(X, XtXi, row, new_point):
     removed_variance = np.dot(old_point, np.dot(XtXi, old_point.T))
     covariance = np.dot(new_point, np.dot(XtXi, old_point.T))
     return (
-        1 + (added_variance - removed_variance) +
-            (covariance * covariance - added_variance * removed_variance)
+        1
+        + (added_variance - removed_variance)
+        + (covariance * covariance - added_variance * removed_variance)
     )
 
 
@@ -182,6 +185,7 @@ def make_model(factor_names, model_order, include_powers=True):
 
 # Main function for optimal design of experiments
 
+
 def build_optimal_design(factor_names, **kwargs):
     """Builds an optimal design.
 
@@ -211,13 +215,15 @@ def build_optimal_design(factor_names, **kwargs):
     """
 
     factor_count = len(factor_names)
-    model = kwargs.get('model', None)
+    model = kwargs.get("model", None)
+
+    include_powers = kwargs.get("include_powers", True)
 
     if model is None:
-        order = kwargs.get('order', 2)
-        model = make_model(factor_names, order)
+        order = kwargs.get("order", 2)
+        model = make_model(factor_names, order, include_powers=include_powers)
 
-    run_count = kwargs.get('run_count', 0)
+    run_count = kwargs.get("run_count", 0)
 
     # first generate a valid starting design
     (design, X) = bootstrap(factor_names, model, run_count)
@@ -228,8 +234,9 @@ def build_optimal_design(factor_names, **kwargs):
         sub_funcs = []
         for subterm in subterms:
             for factor in subterm.factors:
-                eval_code = X.design_info.factor_infos[factor].state['eval_code']
-                if eval_code[0] == 'I':
+                factor_info = X.design_info.factor_infos[factor]
+                eval_code = factor_info.state["eval_code"]
+                if eval_code[0] == "I":
                     eval_code = eval_code[1:]
                 sub_funcs.append(eval_code)
         if not sub_funcs:
@@ -300,7 +307,124 @@ def build_optimal_design(factor_names, **kwargs):
 # Integration with ProcessOptimizer
 
 
-def get_optimal_DOE(factor_space, budget, design_type=None, model=None):
+def sanitize_names_for_patsy(factor_names):
+    """
+    Sanitize factor names for use in patsy formulas.
+
+    This function replaces spaces and mathematical symbols with underscores.
+    It also removes special characters that are not allowed in patsy formulas.
+
+    :param factor_names: The names of the factors in the design.
+    :type factor_names: list of str
+
+    :return: The sanitized factor names
+    :rtype: list of str    
+    """
+
+    chars_to_replace_with_underscore = [
+        " ", "-", "+", "*", "/", ":", "^", "=", "~"
+    ]
+    chars_to_remove = ["$", "(", ")", "[", "]", "{", "}"]
+
+    for i, name in enumerate(factor_names):
+        for symbol in chars_to_replace_with_underscore:
+            if symbol in name:
+                warnings.warn(
+                    ("Warning: Factor names should not contain spaces or "
+                     "mathematical symbols. Replacing with underscore")
+                )
+                factor_names[i] = name.replace(symbol, "_")
+                name = factor_names[i]
+        for symbol_rm in chars_to_remove:
+            if symbol_rm in name:
+                factor_names[i] = name.replace(symbol_rm, "")
+                name = factor_names[i]
+
+    return factor_names
+
+
+def model_order_and_include_powers(design_type):
+    """
+    Determine the order and include_powers of the model based on the design type
+
+    :param design_type: The design_type of design to create.
+    :type design_type: str
+    :options: 'linear', 'screening', 'response', 'optimization'
+
+    :return: The order and include_powers of the model
+    :rtype: int, bool
+    """
+
+    # Specify options for the design types
+    design_types = ["linear", "screening", "response", "optimization"]
+    model_orders = [1, 2, 2, 3]
+    model_include_powers = [None, False, True, True]
+
+    if design_type is not None and design_type not in design_types:
+        raise ValueError(f"design_type must be one of {design_types}")
+
+    # Determine the order and "include powers" of the model
+    if design_type is not None:
+        design_model_orders = dict(zip(design_types, model_orders))
+        order = design_model_orders[design_type]
+        include_powers_dict = dict(zip(design_types, model_include_powers))
+        include_powers = include_powers_dict[design_type]
+    else:
+        order = None
+        include_powers = None
+
+    return order, include_powers
+
+
+def generate_replicas_and_sort(design_points_real_space, n_replicates, sorting):
+    """
+    Generate replicas and sort the design points
+
+    :param design_points_real_space: The design points in real space
+    :type design_points_real_space: np.array
+
+    :param n_replicates: The number of replicates to include in the design
+    :type n_replicates: postive int
+
+    :param sorting: Whether to sort the design points in real space
+    :type sorting: False, or str
+    :options: False, "ascending", "randomized", "random_but_group_replicates"
+
+    :return: The design points with replicas and sorted
+    :rtype: np.array
+    """
+    sorting_options = [False, "ascending", "randomized", "random_but_group_replicates"]
+
+    if sorting not in sorting_options:
+        raise ValueError(f"sorting must be one of {sorting_options}")
+    
+    # if sorting is False, just replicate the design points
+    if sorting is False:
+        design_points_rep_and_sort = np.tile(design_points_real_space, (n_replicates, 1))
+    # if sorting is "random_but_group_replicates", replicate the design points and group the replicas
+    # do this by extending the design points in the first dimension and reshaping
+    elif sorting == "random_but_group_replicates":
+        design_points_mid_reps = np.tile(design_points_real_space, (1, n_replicates))
+        design_points_rep_and_sort = np.reshape(
+            design_points_mid_reps, (len(design_points_real_space) * n_replicates, len(design_points_real_space[0]))
+        )
+    # if sorting is "ascending" or "randomized", replicate the design points first and then sort them
+    else:
+        design_points_mid_reps = np.tile(design_points_real_space, (n_replicates, 1))
+        if sorting == "ascending":
+            design_points_rep_and_sort = design_points_mid_reps[
+                np.lexsort(np.fliplr(design_points_mid_reps).T)
+            ]
+        elif sorting == "randomized":
+            np.random.shuffle(design_points_mid_reps)
+            design_points_rep_and_sort = design_points_mid_reps
+
+    return design_points_rep_and_sort
+
+
+def get_optimal_DOE(
+    factor_space, budget, design_type=None, model=None, replicates=1, sorting=False
+):
     """
     A function that returns the d-optimal design of experiments
     It is non-deterministic and returns a new and perhaps different design each time it is called
@@ -317,7 +441,7 @@ def get_optimal_DOE(factor_space, budget, design_type=None, model=None):
 
     :param design_type: The design_type of design to create.
     :type design_type: str
-    :options: 'screening', 'response', 'optimization'
+    :options: 'linear', 'screening', 'response', 'optimization'
     Mutually exclusive with the model parameter
 
     :param model: The model to use for the design. The default is None
@@ -325,6 +449,15 @@ def get_optimal_DOE(factor_space, budget, design_type=None, model=None):
     Mutually exclusive with the design_type parameter
     Used if you want to have some hand-curated contributions in the model
         e.g., a specific cross interaction between two factors
+
+    :param replicates: The number of replicates to include in the design
+    :type replicates: postive int
+    Default is 1
+
+    :param sorting: Whether to sort the design points in real space
+    :type sorting: False, or str
+    Can take False, "ascending", "randomized", "random_but_group_replicates",
+    Default is False
 
     Outputs:
 
@@ -343,47 +476,37 @@ def get_optimal_DOE(factor_space, budget, design_type=None, model=None):
     get_optimal_DOE(factor_space, 10, design_type='response')
     """
 
-    # Checking inputs - making sure that factor names are valid for use it patsy
-    factor_names = factor_space.names
-    chars_to_replace_with_underscore = [" ", "-", "+", "*", "/", ":", "^", "=", "~"]
-    chars_to_remove = ["$", "(", ")", "[", "]", "{", "}"]
+    # Checking inputs
+    # Making sure that factor names are valid for use in patsy
+    factor_names_raw = factor_space.names
 
-    for i, name in enumerate(factor_names):
-        for symbol in chars_to_replace_with_underscore:
-            if symbol in name:
-                warnings.warn(
-                    "Warning: Factor names should not contain spaces or mathematical symbols. Replacing with underscore"
-                )
-                factor_names[i] = name.replace(symbol, "_")
-                name = factor_names[i]
-        for symbol_rm in chars_to_remove:
-            if symbol_rm in name:
-                factor_names[i] = name.replace(symbol_rm, "")
-                name = factor_names[i]
+    factor_names = sanitize_names_for_patsy(factor_names_raw)
 
     if design_type is not None and model is not None:
         raise ValueError(
-            "'design_type' and 'model' are mutually exclusive. Please choose one or the other"
+            "'design_type' and 'model' are mutually exclusive. "
+            "Please choose one or the other"
         )
 
-    supported_design_types = ["screening", "response", "optimization"]
-    model_orders = [1, 2, 3]
-    if design_type is not None and design_type not in supported_design_types:
-        raise ValueError("design_type must be one of {}".format(supported_design_types))
-
-    # Determine the order of the model
-    if design_type is not None:
-        design_model_orders = dict(zip(supported_design_types, model_orders))
-        order = design_model_orders[design_type]
-    else:
-        order = None
+    order, include_powers = model_order_and_include_powers(design_type)
 
     # Build the optimal design
     design = build_optimal_design(
-        factor_names, run_count=budget, order=order, model=model
+        factor_names,
+        run_count=budget,
+        order=order,
+        model=model,
+        include_powers=include_powers,
     )
 
     # Transform the design into real space
     design_points_real_space = doe_to_real_space(design, factor_space)
 
-    return (design_points_real_space, factor_names)
+    # Generate replicas and sort the design points
+    design_points_with_reps_and_sort = generate_replicas_and_sort(
+        design_points_real_space, replicates, sorting
+    )
+
+    design_points_with_reps_and_sort = generate_replicas_and_sort(design_points_real_space, replicates, sorting)
+
+    return (design_points_with_reps_and_sort, factor_names)
