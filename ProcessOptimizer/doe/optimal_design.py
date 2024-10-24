@@ -287,7 +287,9 @@ def build_optimal_design(factor_names, **kwargs):
 
                 if best_step >= 0:
                     # update X with the best point
-                    design_point[f] = low + ((high - low) / (steps - 1)) * best_step
+                    design_point[f] = (
+                        low + ((high - low) / (steps - 1)) * best_step
+                    )
                     design[i, index_factor] = design_point[f]
                     XtXi = update(XtXi, best_point, X[i])
                     X[i] = best_point
@@ -318,11 +320,19 @@ def sanitize_names_for_patsy(factor_names):
     :type factor_names: list of str
 
     :return: The sanitized factor names
-    :rtype: list of str    
+    :rtype: list of str
     """
 
     chars_to_replace_with_underscore = [
-        " ", "-", "+", "*", "/", ":", "^", "=", "~"
+        " ",
+        "-",
+        "+",
+        "*",
+        "/",
+        ":",
+        "^",
+        "=",
+        "~",
     ]
     chars_to_remove = ["$", "(", ")", "[", "]", "{", "}"]
 
@@ -330,8 +340,10 @@ def sanitize_names_for_patsy(factor_names):
         for symbol in chars_to_replace_with_underscore:
             if symbol in name:
                 warnings.warn(
-                    ("Warning: Factor names should not contain spaces or "
-                     "mathematical symbols. Replacing with underscore")
+                    (
+                        "Warning: Factor names should not contain spaces or "
+                        "mathematical symbols. Replacing with underscore"
+                    )
                 )
                 factor_names[i] = name.replace(symbol, "_")
                 name = factor_names[i]
@@ -345,7 +357,8 @@ def sanitize_names_for_patsy(factor_names):
 
 def model_order_and_include_powers(design_type):
     """
-    Determine the order and include_powers of the model based on the design type
+    Determine the order and include_powers of the model based on the design
+    type
 
     :param design_type: The design_type of design to create.
     :type design_type: str
@@ -376,7 +389,9 @@ def model_order_and_include_powers(design_type):
     return order, include_powers
 
 
-def generate_replicas_and_sort(design_points_real_space, n_replicates, sorting):
+def generate_replicas_and_sort(
+    design_points_real_space, n_replicates, sorting
+):
     """
     Generate replicas and sort the design points
 
@@ -393,24 +408,42 @@ def generate_replicas_and_sort(design_points_real_space, n_replicates, sorting):
     :return: The design points with replicas and sorted
     :rtype: np.array
     """
-    sorting_options = [False, "ascending", "randomized", "random_but_group_replicates"]
+    sorting_options = [
+        False,
+        "ascending",
+        "randomized",
+        "random_but_group_replicates",
+    ]
 
     if sorting not in sorting_options:
         raise ValueError(f"sorting must be one of {sorting_options}")
-    
+
     # if sorting is False, just replicate the design points
     if sorting is False:
-        design_points_rep_and_sort = np.tile(design_points_real_space, (n_replicates, 1))
-    # if sorting is "random_but_group_replicates", replicate the design points and group the replicas
-    # do this by extending the design points in the first dimension and reshaping
-    elif sorting == "random_but_group_replicates":
-        design_points_mid_reps = np.tile(design_points_real_space, (1, n_replicates))
-        design_points_rep_and_sort = np.reshape(
-            design_points_mid_reps, (len(design_points_real_space) * n_replicates, len(design_points_real_space[0]))
+        design_points_rep_and_sort = np.tile(
+            design_points_real_space, (n_replicates, 1)
         )
-    # if sorting is "ascending" or "randomized", replicate the design points first and then sort them
+    # if sorting is "random_but_group_replicates", replicate the design points
+    # and group the replicas
+    # do this by extending the design points in the first dimension and
+    # reshaping
+    elif sorting == "random_but_group_replicates":
+        design_points_mid_reps = np.tile(
+            design_points_real_space, (1, n_replicates)
+        )
+        design_points_rep_and_sort = np.reshape(
+            design_points_mid_reps,
+            (
+                len(design_points_real_space) * n_replicates,
+                len(design_points_real_space[0]),
+            ),
+        )
+    # if sorting is "ascending" or "randomized", replicate the design points
+    # first and then sort them
     else:
-        design_points_mid_reps = np.tile(design_points_real_space, (n_replicates, 1))
+        design_points_mid_reps = np.tile(
+            design_points_real_space, (n_replicates, 1)
+        )
         if sorting == "ascending":
             design_points_rep_and_sort = design_points_mid_reps[
                 np.lexsort(np.fliplr(design_points_mid_reps).T)
@@ -423,11 +456,17 @@ def generate_replicas_and_sort(design_points_real_space, n_replicates, sorting):
 
 
 def get_optimal_DOE(
-    factor_space, budget, design_type=None, model=None, replicates=1, sorting=False
+    factor_space,
+    budget,
+    design_type=None,
+    model=None,
+    replicates=1,
+    sorting=False,
 ):
     """
     A function that returns the d-optimal design of experiments
-    It is non-deterministic and returns a new and perhaps different design each time it is called
+    It is non-deterministic and returns a new and perhaps different design
+    each time it is called
 
     Inputs:
 
@@ -507,6 +546,8 @@ def get_optimal_DOE(
         design_points_real_space, replicates, sorting
     )
 
-    design_points_with_reps_and_sort = generate_replicas_and_sort(design_points_real_space, replicates, sorting)
+    design_points_with_reps_and_sort = generate_replicas_and_sort(
+        design_points_real_space, replicates, sorting
+    )
 
     return (design_points_with_reps_and_sort, factor_names)
